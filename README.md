@@ -4,7 +4,7 @@ A real-time watch-party platform supporting **two modes**: embedded YouTube play
 
 ## Live Demo
 
-**https://cinemesh.vercel.app**
+**https://watchtog.vercel.app** (or your Vercel deployment URL)
 
 ## Demo Credentials
 
@@ -153,7 +153,7 @@ Browser A                           │               Browser B
 
 ### Setup
 ```bash
-git clone https://github.com/your-username/cinemesh.git
+git clone https://github.com/nitinjadhav888/WatchTog.git
 cd cinemesh
 npm install
 
