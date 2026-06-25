@@ -135,6 +135,22 @@ export async function deactivateRoom(
   return { ok: true, data: undefined }
 }
 
+/** Update a room's video URL (host-only). */
+export async function updateRoomVideoUrl(
+  roomCode: string,
+  videoUrl: string | null,
+): Promise<RoomServiceResult<void>> {
+  if (!isSupabaseConfigured()) return { ok: true, data: undefined }
+
+  const { error } = await db()
+    .from('rooms')
+    .update({ video_url: videoUrl })
+    .eq('code', roomCode)
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, data: undefined }
+}
+
 // ─── Participant operations ───────────────────────────────────────────────────
 
 /** Upsert a participant row (join or rejoin after reload). */

@@ -8,7 +8,7 @@ import { Film, Wifi, WifiOff, AlertTriangle, RefreshCw, Maximize2, Minimize2, Me
 
 import { useRoomStore } from '@/store/room-store'
 import { useLocalMedia } from '@/hooks/use-local-media'
-import { upsertParticipant, removeParticipant, updateParticipantPresence } from '@/lib/room-service'
+import { upsertParticipant, removeParticipant, updateParticipantPresence, getRoomByCode, updateRoomVideoUrl } from '@/lib/room-service'
 import { useRoomChannel } from '@/hooks/use-room-channel'
 import { useWebRTC, type PeerConnectionState } from '@/hooks/use-webrtc'
 import { useLiveKitRoom, isLiveKitConfigured } from '@/hooks/use-livekit-room'
@@ -323,13 +323,48 @@ export default function RoomPage() {
   const isHost      = params.get('host')    === 'true'
   const displayName = params.get('display') ?? 'You'
   const dbId        = params.get('dbId')    ?? ''
-  const videoUrl    = params.get('videoUrl') ?? ''
-  const initialVideoId = useMemo(() => parseYouTubeUrl(videoUrl), [videoUrl])
+  const paramVideoUrl = params.get('videoUrl') ?? ''
+  const [videoUrl, setVideoUrl] = useState(paramVideoUrl)
+  const [showVideoUrlInput, setShowVideoUrlInput] = useState(false)
+  const [videoUrlDraft, setVideoUrlDraft] = useState('')
+  const [settingVideoUrl, setSettingVideoUrl] = useState(false)
 
+  // Fetch video_url from DB if not in URL params
+  useEffect(() => {
+    if (paramVideoUrl) return
+    let cancelled = false
+    getRoomByCode(roomId as string).then(result => {
+      if (cancelled || !result.ok || !result.data) return
+      if (result.data.video_url) {
+        setVideoUrl(result.data.video_url)
+      }
+    })
+    return () => { cancelled = true }
+  }, [roomId, paramVideoUrl])
+
+  const initialVideoId = useMemo(() => parseYouTubeUrl(videoUrl), [videoUrl])
   const isYoutubeRoom = !!initialVideoId
   const [viewMode, setViewMode] = useState<'youtube' | 'screen-share'>(
     initialVideoId ? 'youtube' : 'screen-share'
   )
+
+  // Sync viewMode when videoUrl arrives from DB
+  useEffect(() => {
+    if (initialVideoId && viewMode === 'screen-share') {
+      setViewMode('youtube')
+    }
+  }, [initialVideoId, viewMode])
+
+  const handleSetVideoUrl = async () => {
+    const vid = parseYouTubeUrl(videoUrlDraft.trim())
+    if (!vid) return
+    setSettingVideoUrl(true)
+    await updateRoomVideoUrl(roomId as string, videoUrlDraft.trim())
+    setVideoUrl(videoUrlDraft.trim())
+    setShowVideoUrlInput(false)
+    setSettingVideoUrl(false)
+    room.sendSync('seek', 0)
+  }
   // Reuse the participantId set in lobby so presence is consistent
   const participantId = useMemo(
     () => params.get('pid') ?? nanoid(10),
@@ -621,34 +656,44 @@ export default function RoomPage() {
             {roomName}
           </h1>
           {isHost && <Badge variant="gold" size="sm" className="hidden sm:inline-flex">Host</Badge>}
-          {isYoutubeRoom && (
-            <div className="flex items-center gap-1 ml-1">
-              <button
-                onClick={() => setViewMode('youtube')}
-                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
-                  viewMode === 'youtube'
-                    ? 'bg-[rgba(201,168,76,0.15)] text-[#c9a84c]'
-                    : 'text-[#5a5a72] hover:text-[#9090a8]'
-                }`}
-                title="Embedded YouTube player"
-              >
-                <Youtube className="w-3.5 h-3.5 inline mr-1" />
-                Video
-              </button>
-              <button
-                onClick={() => setViewMode('screen-share')}
-                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
-                  viewMode === 'screen-share'
-                    ? 'bg-[rgba(201,168,76,0.15)] text-[#c9a84c]'
-                    : 'text-[#5a5a72] hover:text-[#9090a8]'
-                }`}
-                title="Screen sharing mode"
-              >
-                <Monitor className="w-3.5 h-3.5 inline mr-1" />
-                Share
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-1 ml-1">
+            {isYoutubeRoom && (
+              <>
+                <button
+                  onClick={() => setViewMode('youtube')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    viewMode === 'youtube'
+                      ? 'bg-[rgba(201,168,76,0.15)] text-[#c9a84c]'
+                      : 'text-[#5a5a72] hover:text-[#9090a8]'
+                  }`}
+                  title="Embedded YouTube player"
+                >
+                  <Youtube className="w-3.5 h-3.5 inline mr-1" />
+                  Video
+                </button>
+                <button
+                  onClick={() => setViewMode('screen-share')}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    viewMode === 'screen-share'
+                      ? 'bg-[rgba(201,168,76,0.15)] text-[#c9a84c]'
+                      : 'text-[#5a5a72] hover:text-[#9090a8]'
+                  }`}
+                  title="Screen sharing mode"
+                >
+                  <Monitor className="w-3.5 h-3.5 inline mr-1" />
+                  Share
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => { setShowVideoUrlInput(true); setVideoUrlDraft(videoUrl) }}
+              className="px-2 py-1 rounded-lg text-xs font-semibold text-[#5a5a72] hover:text-[#9090a8] hover:bg-white/[0.06] transition-all"
+              title="Set YouTube video URL"
+            >
+              <Youtube className="w-3.5 h-3.5 inline mr-1" />
+              {videoUrl ? 'Change URL' : 'Set Video'}
+            </button>
+          </div>
           {room.transport === 'local' && (
             <Badge variant="ghost" size="sm" className="hidden sm:inline-flex" title="Same-browser BroadcastChannel — open in another tab to test">
               Local
@@ -967,6 +1012,79 @@ export default function RoomPage() {
         )}
         {isSettingsOpen && (
           <SettingsModal onClose={toggleSettings} />
+        )}
+        {showVideoUrlInput && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowVideoUrlInput(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-md p-6 rounded-2xl"
+              style={{
+                background: 'rgba(10,10,24,0.96)',
+                backdropFilter: 'blur(24px)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+              }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-display font-bold text-lg text-[#f0f0f4]">
+                  {videoUrl ? 'Change Video URL' : 'Set Video URL'}
+                </h3>
+                <button
+                  onClick={() => setShowVideoUrlInput(false)}
+                  className="p-1.5 rounded-lg text-[#5a5a72] hover:text-[#9090a8] hover:bg-white/[0.06] transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-sm text-[#7070a0] mb-4">
+                Paste a YouTube link to watch together. Everyone in the room will see the same video.
+              </p>
+              <input
+                type="text"
+                value={videoUrlDraft}
+                onChange={(e) => setVideoUrlDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSetVideoUrl()
+                }}
+                placeholder="https://youtube.com/watch?v=..."
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none mb-4"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#f0f0f4',
+                }}
+                autoFocus
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setShowVideoUrlInput(false)}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-[#9090a8] hover:text-[#f0f0f4] hover:bg-white/[0.06] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSetVideoUrl}
+                  disabled={settingVideoUrl || !parseYouTubeUrl(videoUrlDraft.trim())}
+                  className="px-5 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-40"
+                  style={{
+                    background: 'linear-gradient(135deg, #c9a84c, #b89040)',
+                    color: '#0a0808',
+                  }}
+                >
+                  {settingVideoUrl ? 'Saving...' : 'Set Video'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
