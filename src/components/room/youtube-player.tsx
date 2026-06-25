@@ -1,23 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { parseYouTubeUrl } from '@/lib/utils'
-
-export interface YouTubePlayerHandle {
-  play: () => void
-  pause: () => void
-  seekTo: (time: number) => void
-  getCurrentTime: () => number
-  getPlayerState: () => number
-  loadVideo: (videoId: string) => void
-}
 
 interface YouTubePlayerProps {
   videoUrl: string
   isPlaying: boolean
   currentTime: number
   onStateChange: (state: { isPlaying: boolean; currentTime: number }) => void
-  onReady?: () => void
 }
 
 type YTPlayer = {
@@ -44,192 +34,188 @@ declare global {
           onError?: (e: { data: number }) => void
         }
       }) => YTPlayer
-      PlayerState: {
-        UNSTARTED: number
-        ENDED: number
-        PLAYING: number
-        PAUSED: number
-        BUFFERING: number
-        CUED: number
-      }
+      PlayerState: { UNSTARTED: number; ENDED: number; PLAYING: number; PAUSED: number; BUFFERING: number; CUED: number }
     }
     onYouTubeIframeAPIReady?: () => void
   }
 }
 
-const PLAYER_STATES: Record<number, string> = {
-  [-1]: 'unstarted',
-  0: 'ended',
-  1: 'playing',
-  2: 'paused',
-  3: 'buffering',
-  5: 'cued',
-}
-
-let apiLoaded = false
 let apiLoadPromise: Promise<void> | null = null
 
 function loadYouTubeAPI(): Promise<void> {
-  if (apiLoaded) return Promise.resolve()
   if (apiLoadPromise) return apiLoadPromise
+  if (typeof window === 'undefined') return Promise.reject(new Error('Server-side'))
+  if (window.YT?.Player) return Promise.resolve()
 
   apiLoadPromise = new Promise<void>((resolve) => {
+    window.onYouTubeIframeAPIReady = () => { resolve() }
     const tag = document.createElement('script')
     tag.src = 'https://www.youtube.com/iframe_api'
-    tag.onload = () => {
-      window.onYouTubeIframeAPIReady = () => {
-        apiLoaded = true
-        resolve()
-      }
-    }
     document.head.appendChild(tag)
   })
 
+  // Timeout after 15s
+  const timeout = new Promise<void>((_, reject) =>
+    setTimeout(() => reject(new Error('YouTube API load timeout')), 15000)
+  )
+
+  apiLoadPromise = Promise.race([apiLoadPromise, timeout])
   return apiLoadPromise
 }
+
+let playerIdCounter = 0
 
 export function YouTubePlayer({
   videoUrl,
   isPlaying,
   currentTime,
   onStateChange,
-  onReady,
 }: YouTubePlayerProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<YTPlayer | null>(null)
-  const [ready, setReady] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const syncRef = useRef(false)
   const videoId = parseYouTubeUrl(videoUrl)
-  const syncInProgress = useRef(false)
+  const playerId = useRef(`yt-${++playerIdCounter}`)
 
-  // Initialize player
+  // Initialize player — container div is always in DOM
   useEffect(() => {
     if (!videoId) return
+    let destroyed = false
     let player: YTPlayer | null = null
 
-    loadYouTubeAPI().then(() => {
-      if (!containerRef.current) return
+    loadYouTubeAPI()
+      .then(() => {
+        if (destroyed) return
+        const id = playerId.current
+        const div = document.getElementById(id)
+        if (!div) return
 
-      try {
-        player = new window.YT!.Player(containerRef.current.id || 'youtube-player', {
-          height: '100%',
-          width: '100%',
-          videoId,
-          playerVars: {
-            autoplay: 0,
-            controls: 1,
-            modestbranding: 1,
-            rel: 0,
-            enablejsapi: 1,
-            origin: typeof window !== 'undefined' ? window.location.origin : '',
-          },
-          events: {
-            onReady: () => {
-              playerRef.current = player
-              setReady(true)
-              onReady?.()
+        try {
+          player = new window.YT!.Player(id, {
+            height: '100%',
+            width: '100%',
+            videoId,
+            playerVars: {
+              autoplay: 0,
+              controls: 1,
+              modestbranding: 1,
+              rel: 0,
+              enablejsapi: 1,
+              origin: window.location.origin,
             },
-            onStateChange: (e: { data: number }) => {
-              if (syncInProgress.current) return
-              const state = PLAYER_STATES[e.data]
-              if (state === 'playing' || state === 'paused') {
-                onStateChange({
-                  isPlaying: state === 'playing',
-                  currentTime: player?.getCurrentTime() ?? 0,
-                })
-              }
+            events: {
+              onReady: () => {
+                playerRef.current = player
+                setStatus('ready')
+              },
+              onStateChange: (e: { data: number }) => {
+                if (syncRef.current || !player) return
+                const state = e.data
+                if (state === 1 || state === 2) {
+                  onStateChange({
+                    isPlaying: state === 1,
+                    currentTime: player.getCurrentTime(),
+                  })
+                }
+              },
+              onError: (e: { data: number }) => {
+                const msgs: Record<number, string> = {
+                  2: 'Invalid video ID',
+                  5: 'Video playback error',
+                  100: 'Video not found or removed',
+                  101: 'Embedding not allowed by content owner',
+                  150: 'Embedding not allowed by content owner',
+                }
+                setStatus('error')
+                setErrorMsg(msgs[e.data] ?? `YouTube error (code ${e.data})`)
+              },
             },
-            onError: (e: { data: number }) => {
-              const messages: Record<number, string> = {
-                2: 'Invalid video ID',
-                5: 'Video playback error',
-                100: 'Video not found or removed',
-                101: 'Video embedding not allowed',
-                150: 'Video embedding not allowed',
-              }
-              setError(messages[e.data] ?? 'YouTube player error')
-            },
-          },
-        })
-      } catch {
-        setError('Failed to create YouTube player')
-      }
-    })
+          })
+        } catch (err) {
+          setStatus('error')
+          setErrorMsg('Failed to create YouTube player')
+        }
+      })
+      .catch(() => {
+        if (!destroyed) {
+          setStatus('error')
+          setErrorMsg('YouTube API failed to load. Check your internet or ad blocker.')
+        }
+      })
 
     return () => {
+      destroyed = true
       try { player?.destroy() } catch { /* ignore */ }
       playerRef.current = null
-      setReady(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId])
 
-  // Sync external play/pause to player
+  // Sync external play/pause/seek to the player
   useEffect(() => {
     const p = playerRef.current
-    if (!p || !ready) return
-    syncInProgress.current = true
+    if (!p) return
+    syncRef.current = true
 
     try {
-      const currentState = p.getPlayerState()
-      const isCurrentlyPlaying = currentState === 1
-
-      // Seek first if we received a time that's far off
+      const curState = p.getPlayerState()
       const curTime = p.getCurrentTime()
-      if (Math.abs(curTime - currentTime) > 1.5) {
+
+      if (Math.abs(curTime - currentTime) > 2) {
         p.seekTo(currentTime, true)
       }
 
-      if (isPlaying && !isCurrentlyPlaying) {
+      if (isPlaying && curState !== 1) {
         p.playVideo()
-      } else if (!isPlaying && isCurrentlyPlaying) {
+      } else if (!isPlaying && curState === 1) {
         p.pauseVideo()
       }
     } finally {
-      setTimeout(() => { syncInProgress.current = false }, 100)
+      setTimeout(() => { syncRef.current = false }, 150)
     }
-  }, [isPlaying, currentTime, ready])
+  }, [isPlaying, currentTime])
 
   if (!videoId) {
     return (
       <div className="absolute inset-0 flex items-center justify-center"
         style={{ background: 'rgba(4,4,12,1)' }}
       >
-        <p className="text-[#5a5a72] text-sm">No video configured for this room</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center"
-        style={{ background: 'rgba(4,4,12,1)' }}
-      >
-        <p className="text-red-400 text-sm">{error}</p>
-      </div>
-    )
-  }
-
-  if (!ready) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center"
-        style={{ background: 'rgba(4,4,12,1)' }}
-      >
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 rounded-full border-2 border-[#c9a84c] border-t-transparent animate-spin mx-auto" />
-          <p className="text-sm text-[#5a5a72]">Loading player...</p>
-        </div>
+        <p className="text-[#5a5a72] text-sm">No video configured. Click "Set Video" above.</p>
       </div>
     )
   }
 
   return (
-    <div className="absolute inset-0">
+    <div className="relative w-full h-full" style={{ background: '#000' }}>
+      {/* Container div — always rendered so YT.Player can find it */}
       <div
-        id="youtube-player"
+        id={playerId.current}
         ref={containerRef}
         className="w-full h-full"
+        style={status !== 'ready' ? { display: 'none' } : undefined}
       />
+
+      {/* Loading overlay */}
+      {status === 'loading' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          <div className="text-center space-y-3">
+            <div className="w-10 h-10 rounded-full border-2 border-[#c9a84c] border-t-transparent animate-spin mx-auto" />
+            <p className="text-sm text-[#5a5a72]">Loading YouTube player...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error overlay */}
+      {status === 'error' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          <div className="text-center max-w-sm px-4">
+            <p className="text-red-400 text-sm mb-1">{errorMsg}</p>
+            <p className="text-[#5a5a72] text-xs">Try a different YouTube link or click "Change URL" above.</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
