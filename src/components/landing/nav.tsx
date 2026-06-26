@@ -44,7 +44,7 @@ export function LandingNav() {
 
         {/* Links */}
         <div className="hidden md:flex items-center gap-8">
-          {['Features', 'How it works', 'Pricing'].map((item) => (
+          {['Features', 'How it works'].map((item) => (
             <a
               key={item}
               href={`#${item.toLowerCase().replace(/\s+/g, '-')}`}
@@ -57,9 +57,11 @@ export function LandingNav() {
 
         {/* CTA */}
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
-            Sign in
-          </Button>
+          <Link href="/join" className="hidden sm:inline-flex">
+            <Button variant="ghost" size="sm">
+              Join a Room
+            </Button>
+          </Link>
           <Link href="/create">
             <Button variant="primary" size="sm" icon={Zap}>
               Start a Room
