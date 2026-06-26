@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { motion, useScroll, useTransform } from 'framer-motion'
-import { Film, Zap } from 'lucide-react'
+import { motion, useScroll } from 'framer-motion'
+import { Film, Zap, LogIn, LogOut, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/components/auth/auth-provider'
 
 export function LandingNav() {
   const [scrolled, setScrolled] = useState(false)
@@ -57,6 +58,7 @@ export function LandingNav() {
 
         {/* CTA */}
         <div className="flex items-center gap-3">
+          <AuthButtons />
           <Link href="/join" className="hidden sm:inline-flex">
             <Button variant="ghost" size="sm">
               Join a Room
@@ -70,5 +72,33 @@ export function LandingNav() {
         </div>
       </nav>
     </motion.header>
+  )
+}
+
+function AuthButtons() {
+  const { user, loading, signOut } = useAuth()
+
+  if (loading) return null
+
+  if (user) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="hidden sm:flex items-center gap-2 text-sm text-[#9090a8]">
+          <User className="w-3.5 h-3.5" />
+          <span className="truncate max-w-[100px]">{user.user_metadata?.display_name ?? user.email?.split('@')[0]}</span>
+        </div>
+        <Button variant="ghost" size="sm" onClick={signOut} icon={LogOut}>
+          <span className="hidden sm:inline">Sign Out</span>
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <Link href="/auth/signin">
+      <Button variant="ghost" size="sm" icon={LogIn}>
+        Sign In
+      </Button>
+    </Link>
   )
 }
