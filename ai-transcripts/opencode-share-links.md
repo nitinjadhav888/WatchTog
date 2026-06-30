@@ -1,46 +1,19 @@
-# OpenCode Session Documentation
+# OpenCode Share Links
 
-## Tool
+This project was built using **OpenCode** as the primary AI coding assistant.
 
-This project was built and modified using **OpenCode** as the primary AI coding assistant.
+## Session
 
-## Session Overview
+Since this session was conducted in a local terminal environment via the OpenCode CLI agent, the full conversation transcript is documented in:
 
-- **Date**: 2026-06-25
-- **Task**: Adapt existing CineMesh watch-party platform to meet 11auction assignment requirements (Option 4: Watch Together Platform)
-- **Total sessions**: 1 continuous session
-
-## Files Created
-
-| File | Purpose |
-|---|---|
-| `src/components/room/youtube-player.tsx` | YouTube IFrame API player with sync, error handling, timeout |
-| `ai-transcripts/ai-usage-summary.md` | Detailed AI usage documentation |
-| `ai-transcripts/opencode-share-links.md` | Session documentation |
-
-## Files Modified
-
-| File | Changes |
-|---|---|
-| `src/lib/supabase.ts` | Added `video_url` to `DbRoom` interface |
-| `src/lib/utils.ts` | Added `parseYouTubeUrl()` helper |
-| `src/lib/room-service.ts` | Added `videoUrl` to `CreateRoomInput`, `updateRoomVideoUrl()` function |
-| `src/app/create/page.tsx` | Added YouTube URL input, validation, URL forwarding to lobby |
-| `src/app/lobby/[roomId]/page.tsx` | Added `videoUrl` passthrough to room page |
-| `src/app/room/[roomId]/page.tsx` | Integrated YouTube player, mode toggle, "Set Video" modal, DB fetch fallback |
-| `src/components/landing/nav.tsx` | Fixed broken "Sign in" button, removed non-existent "Pricing" link |
-| `scripts/cinemesh-migration.sql` | Added `video_url` column to rooms table |
-| `README.md` | Rewritten with assignment-required sections |
-| `.gitignore` | Cleaned up duplicate `.vercel` entries |
-| `.env.local.example` | (existing, used as-is) |
-
-## Key Decisions in This Session
-
-1. **YouTube player component** — Used YouTube IFrame API directly rather than a React wrapper library for more control over events and error handling
-2. **Container div render order** — Fixed critical bug where the player container wasn't in the DOM when YT.Player constructor ran
-3. **DB-backed video URL** — Changed from URL-params-only to also fetch from DB so joiners always get the right video
-4. **Session identity** — Removed misleading "Sign in" button since the app uses session-based identity (no accounts)
+- `ai-transcripts/opencode-session-transcript.md` — Session transcript with prompts, decisions, bugs, and workflow
+- `ai-transcripts/ai-usage-summary.md` — Summary of AI usage with manual decisions and limitations
 
 ## How to Share
 
-OpenCode supports sharing with the `/share` command. This session was conducted in a local terminal environment.
+OpenCode supports sharing with the `/share` command from within the OpenCode CLI. This creates a shareable link for the current conversation. For this session, the complete transcript is available in the files above.
+
+## Tool Version
+
+- **Model**: DeepSeek V4 Flash
+- **Agent**: OpenCode CLI agent (opencode/deepseek-v4-flash-free)
