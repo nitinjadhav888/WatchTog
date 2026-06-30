@@ -1,0 +1,151 @@
+Subject: Submission: Watch Together Platform — CineMesh (Option 4)
+
+Dear Reviewer,
+
+I am submitting my assignment for the 11auction Watch Together Platform (Option 4).
+
+---
+
+## Submission Links
+
+**GitHub Repository:** https://github.com/nitinjadhav888/WatchTog
+**Live Application:** https://watchtog.vercel.app
+
+---
+
+## Demo Instructions
+
+No login or credentials required. The app uses session identity (display name + room code).
+
+**Quick demo (two browser tabs):**
+1. Open https://watchtog.vercel.app in two tabs
+2. Tab 1: Click "Create a Room" → name it → paste a YouTube URL like `https://youtube.com/watch?v=dQw4w9WgXcQ` → enter a display name
+3. Share the 6-character room code shown in the lobby
+4. Tab 2: Click "Join with Code" → enter the code → your name → you're in
+5. Tab 1: Click "Enter Room" → click the **Video** button in the top bar
+6. Play/pause in either tab — the other follows instantly
+7. Seek to a different time — both tabs jump together
+8. Send a chat message — it appears in both tabs
+9. Close Tab 2 and rejoin — it syncs to the correct timestamp
+
+---
+
+## Core Features Implemented
+
+| Requirement | Status |
+|---|---|
+| Create watch room | ✅ 2-step flow with name, type, capacity, optional YouTube URL |
+| Join room by link/code | ✅ 6-character code or full invite URL |
+| Add YouTube/video URL | ✅ At creation time AND via "Set Video" / "Change URL" in-room |
+| Shared video player | ✅ YouTube IFrame API with loading, error, empty states |
+| Realtime play/pause/seek sync | ✅ Supabase Realtime Broadcast with echo-loop prevention |
+| Realtime chat | ✅ With emoji picker, reactions, 50-language translation |
+| Room participants list | ✅ Live presence via Supabase Realtime Presence |
+| Late joiner sync | ✅ Video URL from DB + sync state applied on join |
+| Basic room persistence | ✅ PostgreSQL on Supabase with 12-hour room expiry |
+| Authentication (optional) | ✅ Email/password + Google/GitHub OAuth via Supabase Auth |
+| Screen sharing (bonus) | ✅ WebRTC-based, dual-mode with YouTube player toggle |
+
+---
+
+## Realtime Requirement Coverage
+
+| Assignment Requirement | Implementation |
+|---|---|
+| Play/pause sync | Broadcast via Supabase Realtime; all clients apply instantly |
+| Seeking sync | Absolute-time seek with >2s delta threshold |
+| Chat live update | Realtime Broadcast, deduplicated by message ID |
+| Late joiners correct timestamp | DB-fetched video URL + most recent sync state applied on mount |
+| No permanent desync | Echo-loop prevention (syncRef flag), last-wins model, local playback ticker |
+
+---
+
+## Included Files
+
+- `README.md` — Full documentation: Live Demo, Demo Credentials, Tech Stack, Features, Architecture, Realtime Design, Database Schema, Assumptions, AI Usage, Running Locally, Environment Variables, Known Limitations, Future Improvements
+- `.env.local.example` — All environment variables documented with descriptions
+- `scripts/cinemesh-migration.sql` — Database schema (cinemesh.rooms, cinemesh.participants)
+- `ai-transcripts/`
+  - `ai-usage-summary.md` — AI tool usage overview with manual decisions
+  - `opencode-session-transcript.md` — Full session transcript with prompts, bugs, decisions
+  - `opencode-share-links.md` — OpenCode tool reference
+
+---
+
+## Architecture Summary
+
+**Stack:** Next.js 14 (App Router) + TypeScript + Tailwind CSS + Framer Motion + Radix UI
+**Database:** Supabase PostgreSQL with Realtime
+**Realtime:** Supabase Realtime (Broadcast for sync/chat, Presence for participants)
+**Video:** YouTube IFrame API (embedded) + WebRTC (screen sharing)
+**Auth:** Supabase Auth — session identity (primary) + email/OAuth (optional)
+**Hosting:** Vercel
+
+**Key decisions:**
+- **Dual-mode player**: YouTube embedded sync AND screen share coexist; users toggle via top bar
+- **Session identity over auth**: No signup required — participant ID + display name per room
+- **Ephemeral sync**: Play/pause/seek broadcast-only, never written to DB (avoids write amplification)
+- **YouTube IFrame API directly**: Full control over events, error handling, and sync protocol vs a React wrapper
+- **URL params + DB fallback**: Video URL passed via URL params for speed, fetched from DB on join for reliability
+
+---
+
+## Assumptions
+
+- Each participant uses their own device and browser
+- YouTube is accessible in the participant's region
+- Modern browser with WebRTC/WebSocket support (Chrome, Firefox, Edge, Safari)
+- Reasonably stable internet connection (>1 Mbps, <500ms latency)
+- YouTube IFrame API usage complies with YouTube's terms of service
+- Users are responsible for content rights when adding video URLs
+- Some YouTube videos block embedding at the content owner's discretion (shown as a clear error)
+- Sync is best-effort; sub-50ms typical but not guaranteed in all network conditions
+- Desktop-first design; mobile responsiveness is not a current priority
+
+---
+
+## Known Limitations
+
+- YouTube embedding restrictions: some content owners block embedding (clear error message shown)
+- DRM-protected content (Netflix, Prime, Hotstar) cannot be screen captured by browsers
+- WebRTC mesh limited to ~8 people; LiveKit SFU available as optional upgrade for larger rooms
+- Chat messages are realtime only — not persisted to database
+- Rooms auto-expire 12 hours after creation
+- Video URL changes require users to toggle video mode to see the new video
+- No playlist/watch queue support — one video at a time
+- LocalChannel mode works only across same-browser tabs; cross-device requires Supabase configuration
+
+---
+
+## AI Usage
+
+**Tool used:** OpenCode (powered by DeepSeek V4 Flash)
+
+**AI contributed to:**
+- Architecture analysis and gap identification against assignment requirements
+- Building the YouTube player component with IFrame API integration and error handling
+- Wiring sync through existing realtime infrastructure
+- Room creation flow updates (video URL input, validation, URL forwarding)
+- Debugging player container render-order bug (infinite loading fix)
+- Adding "Set Video anytime" functionality with DB persistence
+- Vercel deployment, Supabase setup, environment configuration
+- README structure and documentation
+- Implementing Supabase Auth (sign-in/sign-up pages with email + OAuth)
+
+**Manual decisions (AI was overridden or directed):**
+- **Dual-mode architecture**: AI suggested replacing the entire video area with just YouTube — I chose to keep screen sharing as a parallel mode
+- **Ephemeral sync state**: AI suggested storing currentTime in DB — I rejected this to avoid write amplification
+- **YouTube IFrame API over React wrappers**: AI could have used react-youtube — I chose direct API for full event control
+- **Session identity over mandatory auth**: AI could have added mandatory sign-up — I chose frictionless session identity
+- **Container render fix**: AI initially placed the player div conditionally — I fixed it to always render
+- **URL params + DB fallback**: AI used only URL params initially — I added DB fetch for late joiner reliability
+
+Full session transcript available in `ai-transcripts/opencode-session-transcript.md`.
+
+---
+
+I look forward to your feedback.
+
+Best regards,
+Nitin Jadhav
+GitHub: https://github.com/nitinjadhav888

@@ -106,26 +106,56 @@ Browser A                           │               Browser B
 
 ## Realtime Design
 
+Realtime is central to this project. Every sync event, chat message, and presence update flows through Supabase Realtime (or the local BroadcastChannel fallback) without any server-side relay.
+
+### Requirements Coverage
+
+| Requirement | How It's Satisfied |
+|---|---|
+| **Play/pause sync** | `sendSync('play'\|'pause', time)` via Realtime Broadcast → all clients apply via YouTube IFrame API or local playback ticker |
+| **Seeking sync** | `sendSync('seek', time)` — clients seek to absolute time with >2s delta threshold to avoid micro-corrections |
+| **Chat live update** | `sendChat(msg)` via Realtime Broadcast — deduplicated by message ID, max 200 messages retained in memory |
+| **Late joiner correct timestamp** | Video URL fetched from DB on mount + sync state applied from most recent broadcast event; YouTube player seeks to `currentTime` on every `[isPlaying, currentTime]` change |
+| **No permanent desync** | `syncRef` flag prevents echo loops; sync events are last-wins; playback ticks forward locally via `setInterval(1000)` in screen-share mode; YouTube player syncs within 2s tolerance |
+
 ### Transport
 - **Supabase Realtime** — Presence for participant tracking, Broadcast for chat/sync/signaling
 - **LocalChannel** — Web BroadcastChannel API for same-browser testing (zero config, falls back automatically)
 
 ### Sync Protocol
 1. User plays/pauses/seeks → `sendSync(action, time)` → Supabase Broadcast
-2. All other clients receive `syncState` → update local player
-3. Late joiners receive current state on presence sync
+2. All other clients receive `syncState` → update local player (YouTube IFrame API or playback state)
+3. Sync events include `issuerId` (participant ID of sender) and `issuedAt` (timestamp)
 4. YouTube player uses the same protocol via YouTube IFrame API events
 
-### Concurrency Handling
-- `syncInProgress` ref flag prevents echo loops (player event → sync → remote player event → sync back)
-- Sync state includes `issuerId` to ignore events from self
-- Playback ticks forward locally using `setInterval` when in screen-share mode
+### Echo Loop Prevention
+A `syncRef` boolean flag is set to `true` before applying any external sync to the YouTube player. The player's `onStateChange` callback checks this flag and skips broadcasting if it's set. The flag is cleared after 150ms via `setTimeout`.
+
+```
+User clicks play
+  → sendSync('play', currentTime)        [broadcast to all]
+  → remote clients receive syncState
+  → syncRef = true
+  → player.playVideo()                    [triggers onStateChange]
+  → onStateChange: syncRef is true → SKIP (don't re-broadcast)
+  → setTimeout → syncRef = false
+```
 
 ### Late Joiner Flow
-1. Join room → receive presence-sync with all participants
-2. Receive current sync state (play/pause + timestamp)
-3. YouTube player seeks to the correct time and applies play/pause state
-4. If no sync state yet, player starts paused at time 0
+1. Join room → create channel → receive `presence-sync` with all existing participants
+2. `syncState` from most recent broadcast is already in memory (or null if no sync yet)
+3. YouTube player initializes with current `isPlaying`/`currentTime` values
+4. Player seeks to `currentTime` if delta > 2s; applies play/pause state
+5. If no sync state has been broadcast yet, player starts paused at time 0
+6. Once any participant plays/pauses/seeks, the new joiner receives the sync and follows
+
+### Concurrency & Desync Prevention
+- **Echo prevention**: `syncRef` flag in YouTube player prevents re-broadcasting self-triggered state changes
+- **issuerId filtering**: Sync payloads include the sender's participant ID for potential filtering (future use)
+- **Last-wins**: The most recent sync event always overwrites previous state — no merge conflicts
+- **Local tick**: In screen-share mode, playback ticks forward via `setInterval(1000)` for UI display
+- **Tolerance**: YouTube player only seeks if `|curTime - currentTime| > 2s`, avoiding unnecessary corrections
+- **No persistent state**: Sync is ephemeral broadcast-only — no DB persistence needed for realtime events
 
 ## Database Schema
 
@@ -246,6 +276,19 @@ See `.env.local.example`:
 2. Click the Share button in the bottom dock
 3. Select a browser tab or window to share
 4. Remote participants see the shared content
+
+## Assumptions
+
+- **Viewers open YouTube on their own**: The app assumes each participant has their own device and browser. It does not handle single-screen shared-viewing scenarios (e.g., one laptop passed around a room).
+- **YouTube availability**: The app assumes YouTube is accessible in the participant's region. Countries where YouTube is blocked will not work.
+- **Browser capability**: The app assumes modern browsers (Chrome, Firefox, Edge, Safari) with WebRTC, WebSocket, and ES module support. Internet Explorer is not supported.
+- **Network quality**: The sync protocol assumes a reasonably stable internet connection. On extremely poor connections (< 1 Mbps or > 500ms latency), sync may lag.
+- **Fair use of YouTube API**: The app uses the YouTube IFrame API which is subject to YouTube's terms of service. The app does not download, modify, or redistribute YouTube content.
+- **Session over account**: The primary identity mechanism is a session-based participant ID + display name, not a persistent user account. This means a user's identity is tied to a room session and is not recoverable if they leave and rejoin.
+- **No content ownership or copyright liability**: The app is a sync layer only. Users are responsible for ensuring they have the right to share and watch the content they add.
+- **YouTube embedding is at the content owner's discretion**: Some videos block embedding. This is a YouTube/platform limitation, not a bug in the app. The player shows a clear error message for such videos.
+- **Realtime sync is best-effort**: While sub-50ms sync is typical on good connections, absolute frame-perfect sync is not guaranteed across all network conditions.
+- **Desktop-first**: The app is designed for desktop use. Mobile responsiveness is not a current priority.
 
 ## Known Limitations
 
